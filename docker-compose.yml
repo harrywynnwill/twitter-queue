@@ -12,11 +12,11 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "80:80"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - PORT=3000
+      - PORT=80
     depends_on:
       - redis
     env_file:
