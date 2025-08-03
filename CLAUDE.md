@@ -45,12 +45,15 @@ The application requires these environment variables:
 - `REDIS_HOST` - Redis server host
 - `REDIS_PORT` - Redis server port
 - `PORT` - Server port (optional, defaults to 3000)
+- `IB_HOST` - Interactive Brokers TWS/Gateway host (optional, defaults to 127.0.0.1)
+- `IB_PORT` - Interactive Brokers TWS/Gateway port (optional, defaults to 7497)
 
 ## Dependencies
 
 - **BullMQ** - Job queue system
 - **Express** - Web framework for the API
 - **Twitter API v2** - Twitter client library
+- **@stoqey/ibkr** - Interactive Brokers TypeScript client
 - **Redis** - Used by BullMQ for job storage
 - **dotenv** - Environment variable management
 
@@ -70,7 +73,32 @@ The application is containerized with Docker Compose including:
 - **Worker**: Background job processor
 
 To run with Docker:
-1. Copy `.env.example` to `.env` and fill in your Twitter API credentials
+1. Copy `.env.example` to `.env` and fill in your Twitter API credentials and Interactive Brokers settings
 2. Run `docker-compose up` to start all services
 3. The API will be available at `http://localhost:3000`
 4. Both server and worker logs will be visible in the console
+
+## Interactive Brokers Integration
+
+The application includes Interactive Brokers integration using the `@stoqey/ibkr` TypeScript client. Available endpoints:
+
+### Market Data
+- `GET /market-data/:symbol` - Get historical market data for a symbol
+  - Query parameters: `duration` (default: "1 D"), `barSize` (default: "1 hour")
+
+### Account & Positions
+- `GET /account/info` - Get account summary information
+- `GET /positions` - Get current positions
+
+### Trading
+- `POST /orders/market` - Place a market order
+  - Body: `{ symbol, action, quantity, secType?, exchange?, currency? }`
+- `POST /orders/limit` - Place a limit order
+  - Body: `{ symbol, action, quantity, price, secType?, exchange?, currency? }`
+- `GET /orders` - Get open orders
+
+### Prerequisites
+1. Have Interactive Brokers TWS (Trader Workstation) or IB Gateway running
+2. Enable API connections in TWS/Gateway settings
+3. Configure the correct host and port in your environment variables
+4. Default connection: `127.0.0.1:7497` (TWS) or `127.0.0.1:4001` (Gateway)
