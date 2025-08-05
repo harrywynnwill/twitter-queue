@@ -9,15 +9,18 @@ This is a Twitter queue system built with TypeScript that uses BullMQ for job qu
 ## Key Commands
 
 ### Development (Local)
-- `npm run dev` - Start the Express server in development mode with auto-reload
+- `npm run dev` - Start the Twitter queue server in development mode with auto-reload
 - `npm run worker` - Start the worker process to process queued tweets
-- `ts-node src/server.ts` - Run the server directly 
+- `npm run ib-server` - Start the Interactive Brokers server in development mode
+- `ts-node src/server.ts` - Run the Twitter queue server directly 
 - `ts-node src/worker.ts` - Run the worker directly
+- `ts-node src/ib-server.ts` - Run the IB server directly
 
 ### Production
 - `npm run build` - Compile TypeScript to JavaScript
-- `npm start` - Start the compiled server
+- `npm start` - Start the compiled Twitter queue server
 - `npm run start:worker` - Start the compiled worker
+- `npm run start:ib-server` - Start the compiled IB server
 
 ### Docker
 - `docker-compose up` - Start all services (Redis, server, worker)
@@ -29,11 +32,12 @@ This is a Twitter queue system built with TypeScript that uses BullMQ for job qu
 
 ## Architecture
 
-The system consists of three main components:
+The system consists of four main components:
 
-1. **Server** (`src/server.ts`) - Express.js REST API with a single POST `/tweet` endpoint that accepts a message and adds it to the queue
-2. **Queue** (`src/queue.ts`) - BullMQ queue configuration that connects to Redis and exports the `tweetQueue` instance
-3. **Worker** (`src/worker.ts`) - BullMQ worker that processes jobs from the queue and posts tweets using the Twitter API v2
+1. **Twitter Queue Server** (`src/server.ts`) - Express.js REST API for trade notifications with POST `/trade` endpoint that formats trades and adds them to the tweet queue
+2. **Interactive Brokers Server** (`src/ib-server.ts`) - Separate Express.js server that handles all IB Gateway/TWS integration, runs on port 3001 by default
+3. **Queue** (`src/queue.ts`) - BullMQ queue configuration that connects to Redis and exports the `tweetQueue` instance
+4. **Worker** (`src/worker.ts`) - BullMQ worker that processes jobs from the queue and posts tweets using the Twitter API v2
 
 ## Environment Variables
 
@@ -44,7 +48,8 @@ The application requires these environment variables:
 - `TWITTER_ACCESS_SECRET` - Twitter API access secret
 - `REDIS_HOST` - Redis server host
 - `REDIS_PORT` - Redis server port
-- `PORT` - Server port (optional, defaults to 3000)
+- `PORT` - Twitter queue server port (optional, defaults to 3000)
+- `IB_SERVER_PORT` - Interactive Brokers server port (optional, defaults to 3001)
 - `IB_HOST` - Interactive Brokers TWS/Gateway host (optional, defaults to 127.0.0.1)
 - `IB_PORT` - Interactive Brokers TWS/Gateway port (optional, defaults to 7497)
 
@@ -59,8 +64,9 @@ The application requires these environment variables:
 
 ## Development Notes
 
-- The server and worker are separate processes that must be run independently
-- Both processes share the same Redis connection configuration
+- The Twitter queue server, IB server, and worker are separate processes that must be run independently
+- Both the Twitter queue server and worker share the same Redis connection configuration
+- The IB server runs independently and connects to IB Gateway/TWS
 - Jobs are processed with the job name "sendTweet"
 - The queue name is "tweetQueue"
 - TypeScript is configured for CommonJS modules with ES2020 target
@@ -80,22 +86,15 @@ To run with Docker:
 
 ## Interactive Brokers Integration
 
-The application includes Interactive Brokers integration using the `@stoqey/ibkr` TypeScript client. Available endpoints:
+The IB server (`src/ib-server.ts`) provides Interactive Brokers integration using the `@stoqey/ibkr` TypeScript client. It runs on port 3001 by default. Available endpoints:
 
 ### Market Data
-- `GET /market-data/:symbol` - Get historical market data for a symbol
-  - Query parameters: `duration` (default: "1 D"), `barSize` (default: "1 hour")
+- `GET /ib/market-data/:symbol` - Get historical market data for a symbol
+  - Query parameters: `duration` (default: "10 M"), `barSize` (default: "1 day")
 
-### Account & Positions
-- `GET /account/info` - Get account summary information
-- `GET /positions` - Get current positions
-
-### Trading
-- `POST /orders/market` - Place a market order
-  - Body: `{ symbol, action, quantity, secType?, exchange?, currency? }`
-- `POST /orders/limit` - Place a limit order
-  - Body: `{ symbol, action, quantity, price, secType?, exchange?, currency? }`
-- `GET /orders` - Get open orders
+### System
+- `GET /ib/health` - Check IB server and connection status
+- `POST /ib/reconnect` - Manually reconnect to IB Gateway/TWS
 
 ### Prerequisites
 1. Have Interactive Brokers TWS (Trader Workstation) or IB Gateway running
