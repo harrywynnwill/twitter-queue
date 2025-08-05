@@ -111,7 +111,7 @@ export function createIBRoutes(ib: IBApi, ibConnected: () => boolean) {
         `✅ Found contract: ${resolvedContract.localSymbol}, conId: ${resolvedContract.conId}`
       );
 
-      const bars = await new Promise((resolve, reject) => {
+      const rawBars = await new Promise((resolve, reject) => {
         const historicalData: any[] = [];
         const timeout = setTimeout(
           () => reject(new Error("Data timeout")),
@@ -132,7 +132,6 @@ export function createIBRoutes(ib: IBApi, ibConnected: () => boolean) {
             WAP: number,
             hasGaps: boolean | undefined
           ) => {
-            clearTimeout(timeout);
             const bar: HistoricalBar = {
               reqId,
               time,
@@ -145,8 +144,14 @@ export function createIBRoutes(ib: IBApi, ibConnected: () => boolean) {
               WAP,
               hasGaps,
             };
+
             historicalData.push(bar);
-            resolve(historicalData);
+
+            // Check if this is the final marker bar
+            if (time.includes("finished-") || (open === -1 && close === -1)) {
+              clearTimeout(timeout);
+              resolve(historicalData);
+            }
           }
         );
 
@@ -168,15 +173,26 @@ export function createIBRoutes(ib: IBApi, ibConnected: () => boolean) {
         );
       });
 
+      // Filter out the final marker element
+      const bars = Array.isArray(rawBars)
+        ? rawBars.filter(
+            (bar) =>
+              !bar.time.includes("finished-") &&
+              bar.open !== -1 &&
+              bar.close !== -1
+          )
+        : [];
+
       console.log(
-        `✅ Market data retrieved for ${symbol}: ${
-          Array.isArray(bars) ? bars.length : 0
-        } bars`
+        `✅ Market data retrieved for ${symbol}: ${bars.length} bars (${
+          Array.isArray(rawBars) ? rawBars.length - bars.length : 0
+        } filtered out)`
       );
+
       res.json({
         success: true,
         data: bars,
-        count: Array.isArray(bars) ? bars.length : 0,
+        count: bars.length,
       });
     } catch (err) {
       console.error("❌ Market data error:", err);
