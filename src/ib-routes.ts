@@ -8,19 +8,66 @@ import {
 } from "@stoqey/ib";
 
 const productMap: Record<string, Contract> = {
-  EURBND: {
-    symbol: "GBL",
+  // UK Gilt
+  "UKGB": {
+    symbol: "G",         // UK Long Gilt
     secType: SecType.CONTFUT,
-    exchange: "EUREX",
-    currency: "EUR",
+    exchange: "LIFFE",
+    currency: "GBP",
   },
-  UST10Y: {
-    symbol: "ZB",
+  
+  // US Treasury Futures
+  "UST10Y": {
+    symbol: "ZN",        // 10-Year Treasury Note
     secType: SecType.CONTFUT,
     exchange: "CBOT",
     currency: "USD",
   },
+  
+  "UST05Y": {
+    symbol: "ZF",        // 5-Year Treasury Note
+    secType: SecType.CONTFUT,
+    exchange: "CBOT",
+    currency: "USD",
+  },
+  
+  "UST30Y": {
+    symbol: "ZB",        // 30-Year Treasury Bond
+    secType: SecType.CONTFUT,
+    exchange: "CBOT",
+    currency: "USD",
+  },
+  
+  // European Bonds
+  "EURBBL": {
+    symbol: "FGBL",      // Euro-Bbl (German Bund)
+    secType: SecType.CONTFUT,
+    exchange: "EUREX",
+    currency: "EUR",
+  },
+  
+  "EURSCA": {
+    symbol: "FGBS",      // Euro-Schatz (German 2-Year)
+    secType: SecType.CONTFUT,
+    exchange: "EUREX",
+    currency: "EUR",
+  },
+  
+  "ITB10Y": {
+    symbol: "FBTP",      // Italian BTP (10-Year)
+    secType: SecType.CONTFUT,
+    exchange: "EUREX",
+    currency: "EUR",
+  },
+  
+  "EURBND": {
+    symbol: "GBL",       // Euro-Bobl (German 5-Year)
+    secType: SecType.CONTFUT,
+    exchange: "EUREX",
+    currency: "EUR",
+  }
 };
+
 
 interface HistoricalBar {
   reqId: number;
@@ -99,6 +146,7 @@ export function createIBRoutes(ib: IBApi, ibConnected: () => boolean) {
         });
 
         ib.on(EventName.error, (err) => {
+          console.error("❌ Contract details error:", err);
           clearTimeout(timeout);
           reject(err);
         });
