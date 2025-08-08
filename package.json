@@ -4,11 +4,11 @@
   "scripts": {
     "dev": "ts-node-dev src/server.ts",
     "worker": "ts-node src/worker.ts",
-    "ib-server": "ts-node-dev src/ib-server.ts",
+    "ib-server": "ts-node-dev src/ib/ib-server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
-    "start:ib-server": "node dist/ib-server.js"
+    "start:ib-server": "node dist/ib/ib-server.js"
   },
   "dependencies": {
     "@stoqey/ib": "^1.5.1",
