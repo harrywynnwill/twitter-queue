@@ -2,10 +2,14 @@
 import os
 import json
 import logging
+import asyncio
 from datetime import datetime
 from flask import Flask, jsonify, request
-from ib_client_insync import IBClient, create_contract
-from products import PRODUCT_MAP, create_contract_from_product, parse_product_from_code, list_products
+from products import PRODUCT_MAP, parse_product_from_code, list_products
+import nest_asyncio
+
+# Allow nested event loops (required for Flask integration)
+nest_asyncio.apply()
 
 # Setup logging
 logging.basicConfig(
@@ -22,9 +26,6 @@ SERVER_PORT = int(os.getenv("IB_SERVER_PORT", "3001"))
 
 app = Flask(__name__)
 
-# Global IB client instance
-ib_client = None
-
 def log_request(method: str, path: str):
     """Log incoming requests"""
     timestamp = datetime.now().isoformat()
@@ -39,26 +40,40 @@ def before_request():
 def health_check():
     """Check IB server and connection status"""
     try:
-        if ib_client and ib_client.ready:
-            # Test connection
-            test_result = ib_client.test_connection()
+        from ib_insync import IB
+        
+        # Quick connection test
+        # Handle event loop for Flask threading
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        test_ib = IB()
+        try:
+            test_ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENT_ID)
+            connected = test_ib.isConnected()
+            test_ib.disconnect()
+            
             return jsonify({
-                "status": "healthy",
-                "connected": test_result.get("connected", False),
+                "status": "healthy" if connected else "unhealthy",
+                "connected": connected,
                 "host": IB_HOST,
                 "port": IB_PORT,
                 "client_id": IB_CLIENT_ID,
-                "ready": ib_client.ready,
                 "timestamp": datetime.now().isoformat()
             })
-        else:
+        except Exception as e:
             return jsonify({
-                "status": "unhealthy",
+                "status": "error",
                 "connected": False,
-                "ready": False,
-                "error": "IB client not ready",
+                "error": str(e),
+                "host": IB_HOST,
+                "port": IB_PORT,
                 "timestamp": datetime.now().isoformat()
             }), 503
+            
     except Exception as e:
         logger.error(f"Health check error: {e}")
         return jsonify({
@@ -71,25 +86,33 @@ def health_check():
 @app.route('/ib/reconnect', methods=['POST'])
 def reconnect():
     """Manually reconnect to IB Gateway/TWS"""
-    global ib_client
     try:
-        if ib_client:
-            ib_client.disconnect_from_ib()
+        from ib_insync import IB
         
-        # Create new client with fixed client ID
-        ib_client = IBClient(IB_HOST, IB_PORT, client_id=IB_CLIENT_ID, timeout=15)
+        # Test fresh connection
+        # Handle event loop for Flask threading
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        test_ib = IB()
+        test_ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENT_ID)
+        connected = test_ib.isConnected()
+        test_ib.disconnect()
         
-        if ib_client.connect_to_ib():
+        if connected:
             return jsonify({
                 "status": "success",
-                "message": "Reconnected to IB",
-                "client_id": ib_client.client_id,
+                "message": "Connection to IB verified",
+                "client_id": IB_CLIENT_ID,
                 "timestamp": datetime.now().isoformat()
             })
         else:
             return jsonify({
                 "status": "error",
-                "message": "Failed to reconnect to IB",
+                "message": "Failed to connect to IB",
                 "timestamp": datetime.now().isoformat()
             }), 500
             
@@ -116,6 +139,13 @@ def get_market_data(code: str):
         logger.info(f"DEBUG: Request params - duration='{duration}', barSize='{bar_size}', whatToShow='{what_to_show}'")
         
         # Create fresh IB connection (like working test)
+        # Handle event loop for Flask threading
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         test_ib = IB()
         test_ib.connect('127.0.0.1', 7497, clientId=3)
         test_ib.reqMarketDataType(2)  # delayed-frozen
@@ -336,6 +366,13 @@ def test_hardcoded():
         from ib_insync import IB, Contract, util
         
         # Create fresh IB connection just for this test
+        # Handle event loop for Flask threading
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
         test_ib = IB()
         test_ib.connect('127.0.0.1', 7497, clientId=3)
         
@@ -432,31 +469,11 @@ def internal_error(error):
         "timestamp": datetime.now().isoformat()
     }), 500
 
-def initialize_ib_client():
-    """Initialize IB client connection"""
-    global ib_client
-    try:
-        # Use fixed client ID instead of random
-        ib_client = IBClient(IB_HOST, IB_PORT, client_id=IB_CLIENT_ID, timeout=15)
-        
-        logger.info(f"🔄 Connecting to IB Gateway/TWS at {IB_HOST}:{IB_PORT} (clientId={ib_client.client_id})...")
-        
-        if ib_client.connect_to_ib():
-            logger.info("✅ Successfully connected to IB Gateway/TWS")
-        else:
-            logger.warning("⚠️ Initial IB connect failed - server will run but /ib/reconnect can be used")
-            
-    except Exception as e:
-        logger.error(f"⚠️ Initial IB connect failed: {e}")
-        ib_client = None
-
 def main():
     """Main server entry point"""
     logger.info(f"🚀 Starting IB HTTP server on http://localhost:{SERVER_PORT}")
     logger.info(f"🔌 Expecting IB Gateway at {IB_HOST}:{IB_PORT}")
-    
-    # Initialize IB client
-    initialize_ib_client()
+    logger.info("ℹ️ Using fresh connections per request for reliability")
     
     # Start Flask server
     app.run(
