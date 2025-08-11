@@ -1,0 +1,60 @@
+🔄 Connecting to IB Gateway/TWS…
+🚀 IB HTTP server on http://localhost:3001
+🔌 Expecting IB Gateway at 127.0.0.1:4002 (clientId=42)
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:08.179Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:08.186Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:13.196Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:13.197Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:18.202Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:18.214Z"}
+⚠️ Initial IB connect failed: IB handshake timeout
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:23.219Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:23.220Z"}
+2025-08-08T13:48:27.990Z GET /ib/health
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:28.222Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:28.223Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:33.229Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:33.231Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:38.233Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:38.234Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:43.239Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:43.240Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:48.244Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:48.245Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:53.250Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:53.251Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:48:58.256Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:48:58.259Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:03.275Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:03.276Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:08.279Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:08.281Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:13.287Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:13.288Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:18.292Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:18.294Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:23.299Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:23.300Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:28.305Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:28.306Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:33.311Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:33.312Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:38.315Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:38.316Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:43.322Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:43.323Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:48.328Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:48.328Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:53.334Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:53.335Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:49:58.341Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:49:58.342Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:50:03.348Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:50:03.348Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:50:08.352Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:50:08.354Z"}
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:50:13.360Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:50:13.360Z"}
+2025-08-08T13:50:14.001Z GET /ib/test-connection
+{"level":"error","msg":"IB error","ts":"2025-08-08T13:50:18.366Z","error":"connect ECONNREFUSED 127.0.0.1:4002"}
+{"level":"warn","msg":"IB socket disconnected, retrying in 5s","ts":"2025-08-08T13:50:18.368Z"}

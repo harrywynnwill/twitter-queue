@@ -76,13 +76,25 @@ export function createIBRoutes(ib: IBClient) {
     const t0 = nowMs();
     logStart("GET /ib/ping", reqId);
     try {
-      await ib.waitUntilReady(5000);
       const dt = nowMs() - t0;
       logInfo(reqId, "✅ Ready", { ms: dt });
       res.json({ ok: true, ms: dt });
     } catch (e: any) {
       logError(reqId, "Ping failed (not ready)", e);
       res.status(503).json({ ok: false, error: e?.message || String(e) });
+    }
+  });
+
+  router.get("/test-connection", async (_req, res) => {
+    const reqId = nextReqId();
+    logStart("GET /ib/test-connection", reqId);
+    try {
+      const result = await ib.testConnection(5000);
+      logInfo(reqId, "Connection test result", result);
+      res.json(result);
+    } catch (e: any) {
+      logError(reqId, "Test connection failed", e);
+      res.status(500).json({ connected: false, error: e?.message || String(e) });
     }
   });
 
@@ -94,9 +106,6 @@ export function createIBRoutes(ib: IBClient) {
     logStart("GET /ib/contract-details", reqId, { query: req.query });
 
     try {
-      const tReady0 = nowMs();
-      await ib.waitUntilReady(10_000);
-      logInfo(reqId, "🔁 Ready check done", { ms: nowMs() - tReady0 });
 
       const {
         code,
@@ -176,10 +185,6 @@ export function createIBRoutes(ib: IBClient) {
     });
 
     try {
-      const tReady0 = nowMs();
-      await ib.waitUntilReady(10_000);
-      logInfo(reqId, "🔁 Ready check done", { ms: nowMs() - tReady0 });
-
       const key = code.slice(0, -3);
       const base = productMap[key];
       if (!base) {
@@ -255,6 +260,15 @@ export function createIBRoutes(ib: IBClient) {
       res.status(500).json({ success: false, error: e?.message || String(e) });
     }
   });
+
+  router.get("/diag/tcp", async (_req, res) => {
+  const net = await import("net");
+  const socket = new net.Socket();
+  socket.setTimeout(3000);
+  socket.connect(4002, "127.0.0.1", () => { socket.destroy(); res.json({ ok: true }); });
+  socket.on("timeout", () => { socket.destroy(); res.status(504).json({ ok: false, error: "timeout" }); });
+  socket.on("error", (e: any) => { res.status(502).json({ ok: false, error: e.code || String(e) }); });
+});
 
   return router;
 }

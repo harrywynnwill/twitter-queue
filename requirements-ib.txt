@@ -1,0 +1,4 @@
+ib_insync>=0.9.86
+flask>=2.3.0
+requests>=2.31.0
+nest-asyncio>=1.5.6
