@@ -2,14 +2,10 @@
 import os
 import json
 import logging
-import asyncio
+import requests
 from datetime import datetime
 from flask import Flask, jsonify, request
 from products import PRODUCT_MAP, parse_product_from_code, list_products
-import nest_asyncio
-
-# Allow nested event loops (required for Flask integration)
-nest_asyncio.apply()
 
 # Setup logging
 logging.basicConfig(
@@ -19,10 +15,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
-IB_HOST = os.getenv("IB_HOST", "127.0.0.1")
-IB_PORT = int(os.getenv("IB_PORT", "7497"))  # 7497 Paper, 7496 Live
-IB_CLIENT_ID = int(os.getenv("IB_CLIENT_ID", "1"))
+CP_GATEWAY_HOST = os.getenv("CP_GATEWAY_HOST", "127.0.0.1")
+CP_GATEWAY_PORT = int(os.getenv("CP_GATEWAY_PORT", "5000"))
 SERVER_PORT = int(os.getenv("IB_SERVER_PORT", "3001"))
+
+# Client Portal Gateway base URL
+CP_BASE_URL = f"https://{CP_GATEWAY_HOST}:{CP_GATEWAY_PORT}/v1/api"
 
 app = Flask(__name__)
 
@@ -38,85 +36,84 @@ def before_request():
 
 @app.route('/ib/health', methods=['GET'])
 def health_check():
-    """Check IB server and connection status"""
+    """Check Client Portal Gateway and authentication status"""
     try:
-        from ib_insync import IB
+        # Check Client Portal Gateway connection and auth status
+        response = requests.get(
+            f"{CP_BASE_URL}/iserver/auth/status",
+            verify=False,  # Client Portal Gateway uses self-signed cert
+            timeout=10
+        )
         
-        # Quick connection test
-        # Handle event loop for Flask threading
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        test_ib = IB()
-        try:
-            test_ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENT_ID)
-            connected = test_ib.isConnected()
-            test_ib.disconnect()
-            
+        if response.status_code == 200:
+            auth_data = response.json()
             return jsonify({
-                "status": "healthy" if connected else "unhealthy",
-                "connected": connected,
-                "host": IB_HOST,
-                "port": IB_PORT,
-                "client_id": IB_CLIENT_ID,
-                "timestamp": datetime.now().isoformat()
-            })
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "connected": False,
-                "error": str(e),
-                "host": IB_HOST,
-                "port": IB_PORT,
-                "timestamp": datetime.now().isoformat()
-            }), 503
-            
-    except Exception as e:
-        logger.error(f"Health check error: {e}")
-        return jsonify({
-            "status": "error",
-            "connected": False,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }), 500
-
-@app.route('/ib/reconnect', methods=['POST'])
-def reconnect():
-    """Manually reconnect to IB Gateway/TWS"""
-    try:
-        from ib_insync import IB
-        
-        # Test fresh connection
-        # Handle event loop for Flask threading
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        test_ib = IB()
-        test_ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENT_ID)
-        connected = test_ib.isConnected()
-        test_ib.disconnect()
-        
-        if connected:
-            return jsonify({
-                "status": "success",
-                "message": "Connection to IB verified",
-                "client_id": IB_CLIENT_ID,
+                "status": "healthy" if auth_data.get("authenticated", False) else "not_authenticated",
+                "authenticated": auth_data.get("authenticated", False),
+                "connected": auth_data.get("connected", False),
+                "competing": auth_data.get("competing", False),
+                "gateway_host": CP_GATEWAY_HOST,
+                "gateway_port": CP_GATEWAY_PORT,
                 "timestamp": datetime.now().isoformat()
             })
         else:
             return jsonify({
                 "status": "error",
-                "message": "Failed to connect to IB",
+                "authenticated": False,
+                "connected": False,
+                "error": f"Gateway returned {response.status_code}",
+                "gateway_host": CP_GATEWAY_HOST,
+                "gateway_port": CP_GATEWAY_PORT,
+                "timestamp": datetime.now().isoformat()
+            }), 503
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Health check error: {e}")
+        return jsonify({
+            "status": "error",
+            "authenticated": False,
+            "connected": False,
+            "error": str(e),
+            "gateway_host": CP_GATEWAY_HOST,
+            "gateway_port": CP_GATEWAY_PORT,
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/ib/reconnect', methods=['POST'])
+def reconnect():
+    """Manually trigger reauthentication with Client Portal Gateway"""
+    try:
+        # Trigger reauthentication by posting to tickle endpoint
+        response = requests.post(
+            f"{CP_BASE_URL}/tickle",
+            verify=False,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            # Check auth status after tickle
+            auth_response = requests.get(
+                f"{CP_BASE_URL}/iserver/auth/status",
+                verify=False,
+                timeout=10
+            )
+            
+            auth_data = auth_response.json() if auth_response.status_code == 200 else {}
+            
+            return jsonify({
+                "status": "success",
+                "message": "Reauthentication triggered",
+                "authenticated": auth_data.get("authenticated", False),
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"Reconnect failed with status {response.status_code}",
                 "timestamp": datetime.now().isoformat()
             }), 500
             
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         logger.error(f"Reconnect error: {e}")
         return jsonify({
             "status": "error",
@@ -126,135 +123,201 @@ def reconnect():
 
 @app.route('/ib/market-data/<code>', methods=['GET'])
 def get_market_data(code: str):
-    """Get historical market data for a symbol or product code"""
+    """Get historical market data for a symbol or product code using Web API"""
     try:
-        from ib_insync import IB, Contract
-        
         # Get query parameters
-        duration = request.args.get('duration', '10 M')
-        bar_size = request.args.get('barSize', '1 day')
+        duration = request.args.get('duration', '10M')
+        bar_size = request.args.get('barSize', '1d')
         what_to_show = request.args.get('whatToShow', 'TRADES')
         
-        # Log the parameters being used
+        logger.info(f"DEBUG: Starting market data request for '{code}'")
         logger.info(f"DEBUG: Request params - duration='{duration}', barSize='{bar_size}', whatToShow='{what_to_show}'")
-        
-        # Create fresh IB connection (like working test)
-        # Handle event loop for Flask threading
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        test_ib = IB()
-        test_ib.connect('127.0.0.1', 7497, clientId=3)
-        test_ib.reqMarketDataType(2)  # delayed-frozen
         
         start_time = datetime.now()
         
-        try:
-            # Try to parse as product code first
-            try:
-                product_code, contract_month = parse_product_from_code(code.upper())
-                logger.info(f"DEBUG: Parsed code '{code}' -> product_code='{product_code}', contract_month='{contract_month}'")
-                logger.info(f"DEBUG: Available products: {list(PRODUCT_MAP.keys())}")
-                
-                if product_code in PRODUCT_MAP:
-                    # Create contract from product mapping
-                    product = PRODUCT_MAP[product_code]
-                    contract = Contract(
-                        symbol=product["symbol"],
-                        secType=product["secType"],
-                        exchange=product["exchange"],
-                        currency=product["currency"]
-                    )
-                    logger.info(f"DEBUG: Using product mapping: {code} -> {product_code} -> {product}")
-                else:
-                    # Fall back to direct symbol as stock
-                    contract = Contract(symbol=code.upper(), secType='STK', exchange='SMART', currency='USD')
-                    logger.info(f"DEBUG: Product not found, using direct symbol as stock: {code}")
-            except Exception as e:
-                logger.error(f"DEBUG: Product parsing failed: {e}")
-                # Fall back to direct symbol as stock
-                contract = Contract(symbol=code.upper(), secType='STK', exchange='SMART', currency='USD')
-                logger.info(f"DEBUG: Exception fallback to stock: {code}")
-            
-            logger.info(f"DEBUG: Final contract: symbol={contract.symbol}, secType={contract.secType}, exchange={contract.exchange}, currency={contract.currency}")
-            
-            # Resolve contract first (crucial step)
-            details = test_ib.reqContractDetails(contract)
-            if not details:
-                test_ib.disconnect()
-                return jsonify({
-                    "error": f"No contract found for {code}",
-                    "symbol": code,
-                    "timestamp": datetime.now().isoformat()
-                }), 404
-            
-            resolved_contract = details[0].contract
-            logger.info(f"Resolved contract: {resolved_contract.localSymbol} {resolved_contract.conId}")
-            
-            # Request historical data using resolved contract
-            bars = test_ib.reqHistoricalData(
-                contract=resolved_contract,
-                endDateTime='',
-                durationStr=duration,
-                barSizeSetting=bar_size,
-                whatToShow=what_to_show,
-                useRTH=False,
-                formatDate=1
-            )
-            
-            if not bars:
-                test_ib.disconnect()
-                return jsonify({
-                    "error": f"No historical data returned for {code}",
-                    "symbol": code,
-                    "timestamp": datetime.now().isoformat()
-                }), 404
-            
-            # Convert to our format
-            data = []
-            for bar in bars:
-                data.append({
-                    'time': str(bar.date),
-                    'open': float(bar.open),
-                    'high': float(bar.high),
-                    'low': float(bar.low),
-                    'close': float(bar.close),
-                    'volume': int(bar.volume),
-                    'count': int(bar.barCount) if hasattr(bar, 'barCount') else 0,
-                    'wap': float(bar.average) if hasattr(bar, 'average') else 0.0
-                })
-            
-            end_time = datetime.now()
-            duration_ms = int((end_time - start_time).total_seconds() * 1000)
-            
-            logger.info(f"Market data request completed in {duration_ms}ms, got {len(data)} bars")
-            
-            return jsonify({
-                "symbol": code,
-                "contract": {
-                    "localSymbol": resolved_contract.localSymbol,
-                    "conId": resolved_contract.conId,
-                    "symbol": resolved_contract.symbol,
-                    "exchange": resolved_contract.exchange,
-                    "currency": resolved_contract.currency
-                },
-                "duration": duration,
-                "barSize": bar_size,
-                "whatToShow": what_to_show,
-                "data": data,
-                "count": len(data),
-                "requestTime": start_time.isoformat(),
-                "responseTime": end_time.isoformat(),
-                "durationMs": duration_ms
-            })
-            
-        finally:
-            # Always disconnect
-            test_ib.disconnect()
+        # Map duration and bar size to Web API format
+        period_mapping = {
+            '1 M': '1m', '10 M': '10m', '1 H': '1h', '1 D': '1d', 
+            '1 W': '1w', '1 Y': '1y'
+        }
+        bar_mapping = {
+            '1 min': '1min', '5 mins': '5min', '1 hour': '1h', 
+            '1 day': '1d', '1 week': '1w'
+        }
         
+        web_period = period_mapping.get(duration, duration.lower().replace(' ', ''))
+        web_bar = bar_mapping.get(bar_size, bar_size.lower().replace(' ', ''))
+        logger.info(f"DEBUG: Mapped to web_period='{web_period}', web_bar='{web_bar}'")
+        
+        # Try to resolve symbol first
+        symbol_to_use = code.upper()
+        contract_info = None
+        
+        # Try to parse as product code first
+        try:
+            product_code, contract_month = parse_product_from_code(code.upper())
+            logger.info(f"DEBUG: Parsed code '{code}' -> product_code='{product_code}', contract_month='{contract_month}'")
+            
+            if product_code in PRODUCT_MAP:
+                product = PRODUCT_MAP[product_code]
+                symbol_to_use = product["symbol"]
+                contract_info = {
+                    "secType": product["secType"],
+                    "exchange": product["exchange"],
+                    "currency": product["currency"]
+                }
+                logger.info(f"DEBUG: Using product mapping: {code} -> {product_code} -> {product}")
+        except Exception as e:
+            logger.error(f"DEBUG: Product parsing failed, using direct symbol: {e}")
+        
+        # Search for contract using Web API
+        search_params = {
+            "symbol": symbol_to_use,
+            "name": True,
+            "secType": contract_info["secType"] if contract_info else "STK"
+        }
+        logger.info(f"DEBUG: Searching with params: {search_params}")
+        
+        search_response = requests.get(
+            f"{CP_BASE_URL}/iserver/secdef/search",
+            params=search_params,
+            verify=False,
+            timeout=30
+        )
+        
+        logger.info(f"DEBUG: Search response status: {search_response.status_code}")
+        
+        if search_response.status_code != 200:
+            logger.error(f"DEBUG: Search failed with status {search_response.status_code}")
+            logger.error(f"DEBUG: Search response text: {search_response.text}")
+            return jsonify({
+                "error": f"Symbol search failed: {search_response.status_code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 404
+            
+        try:
+            search_data = search_response.json()
+            logger.info(f"DEBUG: Search data type: {type(search_data)}")
+            logger.info(f"DEBUG: Search data length: {len(search_data) if isinstance(search_data, list) else 'not a list'}")
+            logger.info(f"DEBUG: First search result: {search_data[0] if search_data else 'empty'}")
+        except Exception as e:
+            logger.error(f"DEBUG: Failed to parse search response as JSON: {e}")
+            logger.error(f"DEBUG: Raw response text: {search_response.text}")
+            return jsonify({
+                "error": f"Failed to parse search response: {str(e)}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 500
+            
+        if not search_data:
+            logger.error(f"DEBUG: Empty search results for {code}")
+            return jsonify({
+                "error": f"No contract found for {code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 404
+        
+        # Use first contract found
+        contract = search_data[0]
+        conid = str(contract.get("conid", ""))
+        logger.info(f"DEBUG: Using contract: {contract}")
+        logger.info(f"DEBUG: Contract ID: {conid}")
+        
+        if not conid:
+            logger.error(f"DEBUG: No contract ID found for {code}")
+            return jsonify({
+                "error": f"No contract ID found for {code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 404
+        
+        # Request historical data using Web API
+        history_params = {
+            "conid": conid,
+            "period": web_period,
+            "bar": web_bar,
+            "outsideRth": "true"
+        }
+        logger.info(f"DEBUG: History request params: {history_params}")
+        
+        history_response = requests.get(
+            f"{CP_BASE_URL}/iserver/marketdata/history",
+            params=history_params,
+            verify=False,
+            timeout=60
+        )
+        
+        logger.info(f"DEBUG: History response status: {history_response.status_code}")
+        
+        if history_response.status_code != 200:
+            logger.error(f"DEBUG: History request failed with status {history_response.status_code}")
+            logger.error(f"DEBUG: History response text: {history_response.text}")
+            return jsonify({
+                "error": f"Historical data request failed: {history_response.status_code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 500
+        
+        try:
+            history_data = history_response.json()
+            logger.info(f"DEBUG: History data keys: {list(history_data.keys()) if isinstance(history_data, dict) else 'not a dict'}")
+            logger.info(f"DEBUG: History data sample: {str(history_data)[:500]}...")
+        except Exception as e:
+            logger.error(f"DEBUG: Failed to parse history response as JSON: {e}")
+            logger.error(f"DEBUG: Raw history response: {history_response.text}")
+            return jsonify({
+                "error": f"Failed to parse history response: {str(e)}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 500
+        
+        # Parse and format the data
+        data = []
+        if "data" in history_data and history_data["data"]:
+            for bar in history_data["data"]:
+                data.append({
+                    'time': bar.get('t', ''),  # timestamp
+                    'open': float(bar.get('o', 0)),  # open
+                    'high': float(bar.get('h', 0)),  # high
+                    'low': float(bar.get('l', 0)),  # low
+                    'close': float(bar.get('c', 0)),  # close
+                    'volume': int(bar.get('v', 0)),  # volume
+                    'count': 0,  # Not available in Web API
+                    'wap': 0.0  # Not available in Web API
+                })
+        
+        end_time = datetime.now()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
+        
+        logger.info(f"Market data request completed in {duration_ms}ms, got {len(data)} bars")
+        
+        return jsonify({
+            "symbol": code,
+            "contract": {
+                "localSymbol": contract.get("description", ""),
+                "conId": conid,
+                "symbol": contract.get("symbol", symbol_to_use),
+                "exchange": contract.get("exchange", ""),
+                "currency": contract.get("currency", "")
+            },
+            "duration": duration,
+            "barSize": bar_size,
+            "whatToShow": what_to_show,
+            "data": data,
+            "count": len(data),
+            "requestTime": start_time.isoformat(),
+            "responseTime": end_time.isoformat(),
+            "durationMs": duration_ms
+        })
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Web API request error for {code}: {e}")
+        return jsonify({
+            "error": str(e),
+            "symbol": code,
+            "timestamp": datetime.now().isoformat()
+        }), 500
     except Exception as e:
         logger.error(f"Market data error for {code}: {e}")
         return jsonify({
@@ -265,63 +328,79 @@ def get_market_data(code: str):
 
 @app.route('/ib/contract-details/<code>', methods=['GET'])
 def get_contract_details(code: str):
-    """Get contract details for a symbol or product code"""
+    """Get contract details for a symbol or product code using Web API"""
     try:
-        if not ib_client or not ib_client.ready:
-            return jsonify({
-                "error": "IB client not ready",
-                "timestamp": datetime.now().isoformat()
-            }), 503
+        # Try to resolve symbol first
+        symbol_to_use = code.upper()
+        sec_type = "STK"  # Default to stock
         
-        # Check if it's a product code via query parameter
-        product_query = request.args.get('code', code)
-        
-        # Try product mapping first
+        # Try to parse as product code first
         try:
-            if product_query.upper() in PRODUCT_MAP:
-                contract = create_contract_from_product(product_query.upper())
-                logger.info(f"Using product mapping for contract details: {product_query}")
-            else:
-                # Fall back to manual parameters
-                sec_type = request.args.get('secType', 'STK')
-                exchange = request.args.get('exchange', 'SMART')
-                currency = request.args.get('currency', 'USD')
-                contract = create_contract(code.upper(), sec_type, exchange, currency)
-                logger.info(f"Using manual contract creation for: {code}")
-        except:
-            # Fall back to manual parameters
+            product_code, contract_month = parse_product_from_code(code.upper())
+            logger.info(f"Parsed code '{code}' -> product_code='{product_code}', contract_month='{contract_month}'")
+            
+            if product_code in PRODUCT_MAP:
+                product = PRODUCT_MAP[product_code]
+                symbol_to_use = product["symbol"]
+                sec_type = product["secType"]
+                logger.info(f"Using product mapping: {code} -> {product_code} -> {product}")
+        except Exception as e:
+            logger.info(f"Product parsing failed, using direct symbol: {e}")
+            # Use query parameters as fallback
             sec_type = request.args.get('secType', 'STK')
-            exchange = request.args.get('exchange', 'SMART')
-            currency = request.args.get('currency', 'USD')
-            contract = create_contract(code.upper(), sec_type, exchange, currency)
-            logger.info(f"Using manual contract creation for: {code}")
         
         logger.info(f"Requesting contract details for {code}")
         
-        # Request contract details
         start_time = datetime.now()
-        contract_details = ib_client.req_contract_details(contract)
+        
+        # Search for contract using Web API
+        search_response = requests.get(
+            f"{CP_BASE_URL}/iserver/secdef/search",
+            params={
+                "symbol": symbol_to_use,
+                "name": True,
+                "secType": sec_type
+            },
+            verify=False,
+            timeout=30
+        )
+        
+        if search_response.status_code != 200:
+            return jsonify({
+                "error": f"Contract search failed: {search_response.status_code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 404
+            
+        search_data = search_response.json()
+        if not search_data:
+            return jsonify({
+                "error": f"No contract found for {code}",
+                "symbol": code,
+                "timestamp": datetime.now().isoformat()
+            }), 404
+        
         end_time = datetime.now()
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
         
-        logger.info(f"Contract details request completed in {duration_ms}ms, got {len(contract_details)} contracts")
+        logger.info(f"Contract details request completed in {duration_ms}ms, got {len(search_data)} contracts")
         
-        # Convert contract details to JSON-serializable format
+        # Convert contract details to our format
         details_data = []
-        for detail in contract_details:
+        for contract in search_data:
             contract_info = {
-                "symbol": detail.contract.symbol,
-                "secType": detail.contract.secType,
-                "exchange": detail.contract.exchange,
-                "currency": detail.contract.currency,
-                "localSymbol": detail.contract.localSymbol,
-                "conId": detail.contract.conId,
-                "longName": getattr(detail, 'longName', ''),
-                "category": getattr(detail, 'category', ''),
-                "subcategory": getattr(detail, 'subcategory', ''),
-                "timeZoneId": getattr(detail, 'timeZoneId', ''),
-                "tradingHours": getattr(detail, 'tradingHours', ''),
-                "liquidHours": getattr(detail, 'liquidHours', '')
+                "symbol": contract.get("symbol", ""),
+                "secType": contract.get("secType", ""),
+                "exchange": contract.get("exchange", ""),
+                "currency": contract.get("currency", ""),
+                "localSymbol": contract.get("description", ""),
+                "conId": str(contract.get("conid", "")),
+                "longName": contract.get("description", ""),
+                "category": contract.get("category", ""),
+                "subcategory": contract.get("subcategory", ""),
+                "timeZoneId": "",  # Not available in Web API
+                "tradingHours": "",  # Not available in Web API
+                "liquidHours": ""  # Not available in Web API
             }
             details_data.append(contract_info)
         
@@ -334,6 +413,13 @@ def get_contract_details(code: str):
             "durationMs": duration_ms
         })
         
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Web API request error for {code}: {e}")
+        return jsonify({
+            "error": str(e),
+            "symbol": code,
+            "timestamp": datetime.now().isoformat()
+        }), 500
     except Exception as e:
         logger.error(f"Contract details error for {code}: {e}")
         return jsonify({
@@ -361,93 +447,104 @@ def get_products():
 
 @app.route('/ib/test-hardcoded', methods=['GET'])
 def test_hardcoded():
-    """Test endpoint with exact working code pattern"""
+    """Test endpoint using Web API with GBL (Euro-Bund future)"""
     try:
-        from ib_insync import IB, Contract, util
+        start_time = datetime.now()
         
-        # Create fresh IB connection just for this test
-        # Handle event loop for Flask threading
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        test_ib = IB()
-        test_ib.connect('127.0.0.1', 7497, clientId=3)
-        
-        # Set market data type to delayed-frozen
-        test_ib.reqMarketDataType(2)
-        logger.info("Connected with clientId=3, set market data type to 2 (delayed-frozen)")
-        
-        # Define Euro-Bund future contract (exactly like working code)
-        c = Contract(symbol='GBL', secType='CONTFUT', exchange='EUREX', currency='EUR')
-        logger.info(f"Created contract: {c}")
-        
-        # Get contract details
-        details = test_ib.reqContractDetails(c)
-        if not details:
-            test_ib.disconnect()
-            return jsonify({
-                "error": "No contract returned",
-                "timestamp": datetime.now().isoformat()
-            }), 404
-            
-        cont = details[0].contract
-        logger.info(f"Found contract: {cont.localSymbol} {cont.conId}")
-        
-        # Request historical data (exactly like working code)
-        bars = test_ib.reqHistoricalData(
-            contract=cont,
-            endDateTime='',
-            durationStr='1 M',
-            barSizeSetting='1 day',
-            whatToShow='TRADES',
-            useRTH=False,
-            formatDate=1
+        # Search for GBL contract using Web API
+        search_response = requests.get(
+            f"{CP_BASE_URL}/iserver/secdef/search",
+            params={
+                "symbol": "GBL",
+                "name": True,
+                "secType": "CONTFUT"
+            },
+            verify=False,
+            timeout=30
         )
         
-        if not bars:
-            test_ib.disconnect()
+        if search_response.status_code != 200:
             return jsonify({
-                "error": "No historical bars returned",
+                "error": f"Contract search failed: {search_response.status_code}",
+                "timestamp": datetime.now().isoformat()
+            }), 404
+            
+        search_data = search_response.json()
+        if not search_data:
+            return jsonify({
+                "error": "No GBL contract found",
                 "timestamp": datetime.now().isoformat()
             }), 404
         
-        logger.info(f"Got {len(bars)} bars")
+        # Use first contract found
+        contract = search_data[0]
+        conid = str(contract.get("conid", ""))
         
-        # Convert to our format
+        logger.info(f"Found GBL contract: {contract.get('description', '')} {conid}")
+        
+        # Request historical data using Web API
+        history_response = requests.get(
+            f"{CP_BASE_URL}/iserver/marketdata/history",
+            params={
+                "conid": conid,
+                "period": "1m",  # 1 month
+                "bar": "1d",     # 1 day bars
+                "outsideRth": "true"
+            },
+            verify=False,
+            timeout=60
+        )
+        
+        if history_response.status_code != 200:
+            return jsonify({
+                "error": f"Historical data request failed: {history_response.status_code}",
+                "timestamp": datetime.now().isoformat()
+            }), 500
+        
+        history_data = history_response.json()
+        
+        # Parse and format the data
         data = []
-        for bar in bars:
-            data.append({
-                'time': str(bar.date),
-                'open': float(bar.open),
-                'high': float(bar.high),
-                'low': float(bar.low),
-                'close': float(bar.close),
-                'volume': int(bar.volume),
-                'count': int(bar.barCount) if hasattr(bar, 'barCount') else 0,
-                'wap': float(bar.average) if hasattr(bar, 'average') else 0.0
-            })
+        if "data" in history_data and history_data["data"]:
+            for bar in history_data["data"]:
+                data.append({
+                    'time': bar.get('t', ''),
+                    'open': float(bar.get('o', 0)),
+                    'high': float(bar.get('h', 0)),
+                    'low': float(bar.get('l', 0)),
+                    'close': float(bar.get('c', 0)),
+                    'volume': int(bar.get('v', 0)),
+                    'count': 0,  # Not available in Web API
+                    'wap': 0.0  # Not available in Web API
+                })
         
-        # Clean up
-        test_ib.disconnect()
+        logger.info(f"Got {len(data)} bars")
+        
+        end_time = datetime.now()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
         
         return jsonify({
             "symbol": "GBL",
             "contract": {
-                "localSymbol": cont.localSymbol,
-                "conId": cont.conId,
-                "symbol": cont.symbol,
-                "exchange": cont.exchange,
-                "currency": cont.currency
+                "localSymbol": contract.get("description", ""),
+                "conId": conid,
+                "symbol": contract.get("symbol", "GBL"),
+                "exchange": contract.get("exchange", ""),
+                "currency": contract.get("currency", "")
             },
             "data": data,
             "count": len(data),
-            "message": "Hardcoded test successful",
+            "message": "Web API test successful",
+            "durationMs": duration_ms,
             "timestamp": datetime.now().isoformat()
         })
         
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Web API request error: {e}")
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
     except Exception as e:
         logger.error(f"Hardcoded test error: {e}")
         return jsonify({
@@ -471,9 +568,10 @@ def internal_error(error):
 
 def main():
     """Main server entry point"""
-    logger.info(f"🚀 Starting IB HTTP server on http://localhost:{SERVER_PORT}")
-    logger.info(f"🔌 Expecting IB Gateway at {IB_HOST}:{IB_PORT}")
-    logger.info("ℹ️ Using fresh connections per request for reliability")
+    logger.info(f"🚀 Starting IB Web API server on http://localhost:{SERVER_PORT}")
+    logger.info(f"🔌 Using Client Portal Gateway at {CP_BASE_URL}")
+    logger.info("ℹ️ Web API mode - requires Client Portal Gateway to be running and authenticated")
+    logger.info("📋 Run 'java -jar clientportal.gw/build/dist/clientportal.gw.jar' to start the gateway")
     
     # Start Flask server
     app.run(

@@ -1,5 +1,4 @@
-from typing import Dict, Any
-from ib_insync import Contract
+from typing import Dict, Any, Optional, Tuple
 
 # Product mapping for financial instruments
 PRODUCT_MAP: Dict[str, Dict[str, Any]] = {
@@ -58,22 +57,22 @@ PRODUCT_MAP: Dict[str, Dict[str, Any]] = {
     },
 }
 
-def create_contract_from_product(product_code: str, contract_month: str = None) -> Contract:
-    """Create IB contract from product code and optional contract month"""
+def create_contract_from_product(product_code: str, contract_month: Optional[str] = None) -> Dict[str, Any]:
+    """Create contract dict from product code and optional contract month"""
     if product_code not in PRODUCT_MAP:
         raise ValueError(f"Unknown product code: {product_code}")
     
     product = PRODUCT_MAP[product_code]
-    contract = Contract()
+    contract = {
+        "symbol": product["symbol"],
+        "secType": product["secType"],
+        "exchange": product["exchange"],
+        "currency": product["currency"]
+    }
     
-    contract.symbol = product["symbol"]
-    contract.secType = product["secType"]
-    contract.exchange = product["exchange"]
-    contract.currency = product["currency"]
-    
-    # # Add contract month if provided (for futures)
-    # if contract_month and product["secType"] == "CONTFUT":
-    #     contract.lastTradeDateOrContractMonth = contract_month
+    # Add contract month if provided (for futures)
+    if contract_month and product["secType"] == "CONTFUT":
+        contract["lastTradeDateOrContractMonth"] = contract_month
     
     return contract
 
@@ -88,7 +87,7 @@ def list_products() -> Dict[str, Dict[str, Any]]:
     """List all available products"""
     return PRODUCT_MAP.copy()
 
-def parse_product_from_code(full_code: str) -> tuple[str, str]:
+def parse_product_from_code(full_code: str) -> Tuple[str, Optional[str]]:
     """Parse product code and contract month from full code
     
     Example: 'EURBBLM25' -> ('EURBBL', 'M25')
