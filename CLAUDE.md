@@ -11,17 +11,16 @@ This is a Twitter queue system built with TypeScript that uses BullMQ for job qu
 ### Development (Local)
 - `npm run dev` - Start the Twitter queue server in development mode with auto-reload
 - `npm run worker` - Start the worker process to process queued tweets
-- `npm run ib-server` - Start the Interactive Brokers server in development mode
-- `python3 src/ib/ib_server.py` - Run the Python IB server directly
+- `./scripts/ib-server.sh` - Start the Interactive Brokers Python server
+- `./scripts/ib-server-random.sh` - Start the IB server with random client IDs
+- `python3 src/ib/ib_server.py` - Run the Python IB Web API server directly
 - `ts-node src/server.ts` - Run the Twitter queue server directly 
 - `ts-node src/worker.ts` - Run the worker directly
-- `ts-node src/ib-server.ts` - Run the IB server directly (deprecated, use Python version)
 
 ### Production
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm start` - Start the compiled Twitter queue server
 - `npm run start:worker` - Start the compiled worker
-- `npm run start:ib-server` - Start the compiled IB server
 
 ### Docker
 - `docker-compose up` - Start all services (Redis, server, worker)
@@ -36,9 +35,13 @@ This is a Twitter queue system built with TypeScript that uses BullMQ for job qu
 The system consists of four main components:
 
 1. **Twitter Queue Server** (`src/server.ts`) - Express.js REST API for trade notifications with POST `/trade` endpoint that formats trades and adds them to the tweet queue
-2. **Interactive Brokers Server** (`src/ib/ib_server.py`) - Python Flask server that handles all IB Gateway/TWS integration using the official IB Python API, runs on port 3001 by default
+2. **Interactive Brokers Server** (`src/ib/ib_server.py`) - Python Flask server that interfaces with IB's Client Portal Web API, runs on port 3001 by default
 3. **Queue** (`src/queue.ts`) - BullMQ queue configuration that connects to Redis and exports the `tweetQueue` instance
 4. **Worker** (`src/worker.ts`) - BullMQ worker that processes jobs from the queue and posts tweets using the Twitter API v2
+
+Use the shell scripts in `scripts/` directory to start the IB server:
+- `./scripts/ib-server.sh` - Start the IB Web API server
+- `./scripts/ib-server-random.sh` - Deprecated (no longer needed for Web API)
 
 ## Environment Variables
 
@@ -51,15 +54,15 @@ The application requires these environment variables:
 - `REDIS_PORT` - Redis server port
 - `PORT` - Twitter queue server port (optional, defaults to 3000)
 - `IB_SERVER_PORT` - Interactive Brokers server port (optional, defaults to 3001)
-- `IB_HOST` - Interactive Brokers TWS/Gateway host (optional, defaults to 127.0.0.1)
-- `IB_PORT` - Interactive Brokers TWS/Gateway port (optional, defaults to 7497)
+- `CP_GATEWAY_HOST` - Client Portal Gateway host (optional, defaults to 127.0.0.1)
+- `CP_GATEWAY_PORT` - Client Portal Gateway port (optional, defaults to 5000)
 
 ## Dependencies
 
 - **BullMQ** - Job queue system
 - **Express** - Web framework for the API
 - **Twitter API v2** - Twitter client library
-- **ibapi** - Interactive Brokers official Python API client
+- **requests** - HTTP client for Web API calls
 - **Flask** - Python web framework for the IB API server
 - **Redis** - Used by BullMQ for job storage
 - **dotenv** - Environment variable management
@@ -68,7 +71,7 @@ The application requires these environment variables:
 
 - The Twitter queue server, IB server, and worker are separate processes that must be run independently
 - Both the Twitter queue server and worker share the same Redis connection configuration
-- The IB server runs independently and connects to IB Gateway/TWS
+- The IB server runs independently and connects to Client Portal Gateway
 - Jobs are processed with the job name "sendTweet"
 - The queue name is "tweetQueue"
 - TypeScript is configured for CommonJS modules with ES2020 target
@@ -88,37 +91,39 @@ To run with Docker:
 
 ## Interactive Brokers Integration
 
-The IB server (`src/ib/ib_server.py`) provides Interactive Brokers integration using the official IB Python API client. It runs on port 3001 by default.
+The IB server (`src/ib/ib_server.py`) provides Interactive Brokers integration using the Client Portal Web API. It runs on port 3001 by default.
 
 ### Setup
-1. Install Python dependencies: `pip install -r requirements-ib.txt`
-2. Have Interactive Brokers TWS (Trader Workstation) or IB Gateway running
-3. Enable API connections in TWS/Gateway settings
-4. Configure the correct host and port in your environment variables
-5. Default connection: `127.0.0.1:7497` (TWS) or `127.0.0.1:4001` (Gateway)
+1. Install Python dependencies: `pip install flask requests`
+2. Download and start the Client Portal Gateway:
+   - Download from: https://www.interactivebrokers.com/en/index.php?f=5041
+   - Run: `java -jar clientportal.gw/build/dist/clientportal.gw.jar`
+   - Gateway will start on `https://localhost:5000`
+3. Authenticate via the gateway web interface at `https://localhost:5000`
+4. Configure environment variables for gateway host/port if needed
+5. Default connection: `127.0.0.1:5000` (Client Portal Gateway)
 
 ### Available Endpoints
 
 #### Market Data
 - `GET /ib/market-data/:symbol` - Get historical market data for a symbol
   - Query parameters: 
-    - `duration` (default: "1 D") - Duration string like "1 D", "1 W", "1 M"
-    - `barSize` (default: "1 hour") - Bar size like "1 min", "5 mins", "1 hour", "1 day"
-    - `whatToShow` (default: "TRADES") - Data type: "TRADES", "MIDPOINT", "BID", "ASK"
+    - `duration` (default: "10M") - Duration string like "1M", "10M", "1H", "1D", "1W", "1Y"
+    - `barSize` (default: "1d") - Bar size like "1min", "5min", "1h", "1d", "1w"
+    - `whatToShow` (default: "TRADES") - Data type (for compatibility, not used in Web API)
 
 #### Contract Information
 - `GET /ib/contract-details/:symbol` - Get contract details for a symbol
   - Query parameters:
     - `secType` (default: "STK") - Security type
-    - `exchange` (default: "SMART") - Exchange
-    - `currency` (default: "USD") - Currency
 
 #### System
-- `GET /ib/health` - Check IB server and connection status
-- `POST /ib/reconnect` - Manually reconnect to IB Gateway/TWS
+- `GET /ib/health` - Check Client Portal Gateway authentication status
+- `POST /ib/reconnect` - Manually trigger reauthentication
+- `GET /ib/test-hardcoded` - Test Web API with GBL (Euro-Bund future)
 
 ### Running the Python IB Server
 - Development: `python3 src/ib/ib_server.py`
-- The server will automatically connect to IB Gateway/TWS on startup
-- Uses random client IDs to avoid conflicts
-- Automatic reconnection on connection failures
+- The server will make requests to Client Portal Gateway
+- Requires Client Portal Gateway to be running and authenticated
+- No client ID management needed (handled by gateway)
